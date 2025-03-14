@@ -37,10 +37,11 @@ def parse_transaction(text):
     Parse a transaction text to extract amount, merchant, date, and category.
 
     This function:
-      - Extracts the amount using spaCy's MONEY entity and falls back to a regex if needed.
-      - Extracts the date by looking for a pattern using regex and spaCy's DATE entity.
-      - Extracts the merchant using multiple patterns: "transfer to <merchant> on", "with <merchant> on",
-        or "at <merchant> on". Finally, it falls back to spaCy's ORG/PRODUCT entities if necessary.
+      - Extracts the amount using spaCy's MONEY entity and falls back to regex if needed.
+      - Extracts the date by first using a regex looking for "on <Month> <day>, <year>" and falls back to spaCy's DATE entities.
+      - Attempts to extract the merchant using patterns such as "transfer to <merchant> on", "with <merchant> on",
+        or "at <merchant> on". If these fail, it falls back to spaCy's ORG/PRODUCT entities.
+      - For simple inputs like "$123 hamza", if no merchant is detected, it takes the token immediately following the money value.
     """
     # Process text with spaCy
     doc = nlp(text)
@@ -49,7 +50,7 @@ def parse_transaction(text):
     amount = None
     parsed_date = None
 
-    # Extract amount using spaCy entities
+    # Extract amount using spaCy's MONEY entity
     for ent in doc.ents:
         if ent.label_ == "MONEY" and amount is None:
             try:
@@ -57,7 +58,7 @@ def parse_transaction(text):
             except Exception:
                 pass
 
-    # Fallback: if spaCy did not extract the amount, try regex.
+    # Fallback: if spaCy did not extract the amount, use regex.
     if amount is None:
         amount_match = re.search(r'\$(\d+(?:\.\d+)?)', text)
         if amount_match:
@@ -75,7 +76,7 @@ def parse_transaction(text):
         date_text = date_match.group(1)
         parsed_date = dateparser.parse(date_text)
     else:
-        # Fallback: use spaCy's DATE entity.
+        # Fallback: use spaCy's DATE entities
         for ent in doc.ents:
             if ent.label_ == "DATE":
                 parsed_date = dateparser.parse(ent.text)
@@ -85,7 +86,7 @@ def parse_transaction(text):
     if parsed_date is None:
         parsed_date = datetime.today()
 
-    # Attempt to extract the merchant using multiple patterns.
+    # Extract merchant using multiple patterns:
     merchant = None
     # Pattern 1: "transfer to <merchant> on"
     merchant_match = re.search(r'transfer to\s+(.*?)\s+on', text, re.IGNORECASE)
@@ -102,12 +103,21 @@ def parse_transaction(text):
             if merchant_match:
                 merchant = merchant_match.group(1).strip()
 
+    # Fallback: use spaCy's ORG or PRODUCT entities.
     if merchant is None:
-        # Final fallback: use spaCy's ORG or PRODUCT entities
         for ent in doc.ents:
             if ent.label_ in ("ORG", "PRODUCT"):
                 merchant = ent.text.strip()
                 break
+
+    # Additional fallback for simple input like "$123 hamza"
+    if merchant is None:
+        tokens = text.split()
+        for i, token in enumerate(tokens):
+            if token.startswith('$'):
+                if i + 1 < len(tokens):
+                    merchant = tokens[i + 1]
+                    break
 
     if merchant is None:
         merchant = "unknown"
