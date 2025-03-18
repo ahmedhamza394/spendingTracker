@@ -212,12 +212,20 @@ def update_field(transaction_id):
             # Convert value to float
             value = float(value.replace('$', '').strip())
         conn.execute(f"UPDATE transactions SET {field} = ? WHERE id = ?", (value, transaction_id))
-        conn.commit()
+        conn.commit()  # commit changes before reading new values
+        
+        # Recalculate transactions and total
+        transactions = conn.execute('SELECT * FROM transactions ORDER BY transactionDate DESC').fetchall()
+        total_row = conn.execute('SELECT SUM(amount) as total FROM transactions').fetchone()
+        total = total_row['total'] if total_row['total'] is not None else 0.0
+        
+        conn.close()
+        # Return a JSON response with the new total
+        return jsonify({"status": "success", "total": total})
     except Exception as e:
         conn.close()
         return jsonify({"status": "error", "message": str(e)}), 500
-    conn.close()
-    return jsonify({"status": "success"})
+
 
 
 if __name__ == '__main__':

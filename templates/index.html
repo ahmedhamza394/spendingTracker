@@ -67,13 +67,13 @@
     }
   </style>
   <script>
-    // Function to send inline update for a given transaction field
+    // Function to send inline update for a given transaction field via AJAX.
     function updateField(transactionId, field, newValue) {
       fetch(`/update_field/${transactionId}`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          // You might want to add a CSRF token here in production
+          'Content-Type': 'application/json'
+          // Include CSRF token if necessary.
         },
         body: JSON.stringify({ field: field, value: newValue })
       })
@@ -81,6 +81,9 @@
       .then(data => {
         if (data.status !== "success") {
           alert("Update failed: " + data.message);
+        } else {
+          // Update the total amount displayed on the page.
+          document.getElementById("total-amount").innerText = "$" + parseFloat(data.total).toFixed(2);
         }
       })
       .catch(error => {
@@ -88,7 +91,7 @@
       });
     }
 
-    // Event handler for inline editing fields
+    // Handler that triggers on blur of editable fields.
     function inlineUpdateHandler(event) {
       const td = event.target;
       const transactionId = td.getAttribute("data-id");
@@ -97,7 +100,7 @@
       updateField(transactionId, field, newValue);
     }
 
-    // Attach blur event listeners on page load to editable cells
+    // Add blur event listeners to all editable cells when the DOM loads.
     document.addEventListener("DOMContentLoaded", function() {
       const editables = document.querySelectorAll(".editable");
       editables.forEach(function(cell) {
@@ -139,10 +142,14 @@
     <tbody>
       {% for tx in transactions %}
       <tr>
-        <!-- Inline editable fields with data attributes for transaction id and field name -->
-        <td class="editable" contenteditable="true" data-id="{{ tx['id'] }}" data-field="amount">${{ tx['amount'] | round(2) }}</td>
+        <!-- Inline editable fields for amount and category -->
+        <td class="editable" contenteditable="true" data-id="{{ tx['id'] }}" data-field="amount">
+          ${{ tx['amount'] | round(2) }}
+        </td>
         <td>{{ tx['merchant'] }}</td>
-        <td class="editable" contenteditable="true" data-id="{{ tx['id'] }}" data-field="category">{{ tx['category'] }}</td>
+        <td class="editable" contenteditable="true" data-id="{{ tx['id'] }}" data-field="category">
+          {{ tx['category'] }}
+        </td>
         <td>{{ tx['transactionDate'] }}</td>
         <td>
           <form method="POST" action="{{ url_for('delete_transaction', transaction_id=tx['id']) }}">
@@ -155,7 +162,7 @@
     <tfoot>
       <tr>
         <td colspan="1">Total</td>
-        <td colspan="4">${{ total | round(2) }}</td>
+        <td colspan="4" id="total-amount">${{ total | round(2) }}</td>
       </tr>
     </tfoot>
   </table>
