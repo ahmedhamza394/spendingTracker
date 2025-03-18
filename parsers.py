@@ -37,21 +37,11 @@ def parse_transaction(text):
     Parse a transaction text to extract amount, merchant, date, and category.
 
     This function:
-      - Extracts the amount using spaCy's MONEY entity.
-      - Extracts the date by first looking for a pattern like "on <Month> <day>, <year>".
-      - Falls back to spaCy's DATE entity if the regex doesn't match.
-      - Extracts the merchant using patterns such as "transfer to <merchant> on" or "with <merchant> on".
-    
-    Example input:
-      "Chase acct 3050: Your $3,690.35 external transfer to MIDWEST LOAN on Mar 3, 2025 at 4:43 PM ET was more than the $0.00 in your Alerts settings."
-      
-    Expected output:
-      {
-         "amount": 3690.35,
-         "merchant": "MIDWEST LOAN",
-         "date": "2025-03-03",
-         "category": <determined from DB>
-      }
+      - Extracts the amount using spaCy's MONEY entity and falls back to regex if needed.
+      - Extracts the date by first using a regex looking for "on <Month> <day>, <year>" and falls back to spaCy's DATE entities.
+      - Attempts to extract the merchant using patterns such as "transfer to <merchant> on", "with <merchant> on",
+        or "at <merchant> on". If these fail, it falls back to spaCy's ORG/PRODUCT entities.
+      - For simple inputs like "$123 hamza", if no merchant is detected, it takes the token immediately following the money value.
     """
     # Process text with spaCy
     doc = nlp(text)
@@ -60,7 +50,7 @@ def parse_transaction(text):
     amount = None
     parsed_date = None
 
-    # Extract amount using spaCy entities
+    # Extract amount using spaCy's MONEY entity
     for ent in doc.ents:
         if ent.label_ == "MONEY" and amount is None:
             try:
@@ -68,43 +58,70 @@ def parse_transaction(text):
             except Exception:
                 pass
 
-    # First, try to extract the date using a regex for the "on <Month> <day>, <year>" pattern.
+    # Fallback: if spaCy did not extract the amount, use regex.
+    if amount is None:
+        amount_match = re.search(r'\$(\d+(?:\.\d+)?)', text)
+        if amount_match:
+            try:
+                amount = float(amount_match.group(1))
+            except Exception:
+                pass
+
+    if amount is None:
+        raise ValueError("Could not find a valid amount.")
+
+    # Extract date using regex first.
     date_match = re.search(r'on\s+([A-Za-z]{3,9}\s+\d{1,2},?\s+\d{4})', text, re.IGNORECASE)
     if date_match:
         date_text = date_match.group(1)
         parsed_date = dateparser.parse(date_text)
     else:
-        # Fallback: use spaCy's DATE entity if regex didn't match.
+        # Fallback: use spaCy's DATE entities
         for ent in doc.ents:
             if ent.label_ == "DATE":
                 parsed_date = dateparser.parse(ent.text)
                 if parsed_date:
                     break
 
-    # Default to today's date if no date found
     if parsed_date is None:
         parsed_date = datetime.today()
 
     # Extract merchant using multiple patterns:
     merchant = None
-    # Try first: "transfer to <merchant> on"
+    # Pattern 1: "transfer to <merchant> on"
     merchant_match = re.search(r'transfer to\s+(.*?)\s+on', text, re.IGNORECASE)
     if merchant_match:
         merchant = merchant_match.group(1).strip()
     else:
-        # Fallback: "with <merchant> on"
+        # Pattern 2: "with <merchant> on"
         merchant_match = re.search(r'with\s+(.*?)\s+on', text, re.IGNORECASE)
         if merchant_match:
             merchant = merchant_match.group(1).strip()
+        else:
+            # Pattern 3: "at <merchant> on"
+            merchant_match = re.search(r'at\s+(.*?)\s+on', text, re.IGNORECASE)
+            if merchant_match:
+                merchant = merchant_match.group(1).strip()
+
+    # Fallback: use spaCy's ORG or PRODUCT entities.
     if merchant is None:
-        # Final fallback: use spaCy's ORG or PRODUCT entities
         for ent in doc.ents:
             if ent.label_ in ("ORG", "PRODUCT"):
                 merchant = ent.text.strip()
                 break
+
+    # Additional fallback for simple input like "$123 hamza"
+    if merchant is None:
+        tokens = text.split()
+        for i, token in enumerate(tokens):
+            if token.startswith('$'):
+                if i + 1 < len(tokens):
+                    merchant = tokens[i + 1]
+                    break
+
     if merchant is None:
         merchant = "unknown"
-    
+
     date_str = parsed_date.strftime("%Y-%m-%d")
     category = get_category_for_merchant(merchant)
     
