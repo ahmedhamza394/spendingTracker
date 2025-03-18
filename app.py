@@ -194,5 +194,31 @@ def report():
     flash(f"Report generated and 'sent' to {email} (simulated).")
     return render_template('report.html', report=report_content)
 
+from flask import request, jsonify
+
+@app.route('/update_field/<int:transaction_id>', methods=['POST'])
+@login_required
+def update_field(transaction_id):
+    data = request.get_json()
+    field = data.get("field")
+    value = data.get("value")
+    
+    if field not in ["amount", "category"]:
+        return jsonify({"status": "error", "message": "Invalid field"}), 400
+
+    conn = get_db_connection()
+    try:
+        if field == "amount":
+            # Convert value to float
+            value = float(value.replace('$', '').strip())
+        conn.execute(f"UPDATE transactions SET {field} = ? WHERE id = ?", (value, transaction_id))
+        conn.commit()
+    except Exception as e:
+        conn.close()
+        return jsonify({"status": "error", "message": str(e)}), 500
+    conn.close()
+    return jsonify({"status": "success"})
+
+
 if __name__ == '__main__':
     app.run(debug=True)

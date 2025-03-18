@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Web App MVP</title>
+  <title>Spending Tracker App</title>
   <style>
     body {
       font-family: Arial, sans-serif;
@@ -46,18 +46,6 @@
     .delete-btn:hover {
       background-color: #c9302c;
     }
-    .update-btn {
-      background-color: #5cb85c;
-      color: white;
-      border: none;
-      padding: 5px 10px;
-      border-radius: 4px;
-      cursor: pointer;
-      margin-left: 5px;
-    }
-    .update-btn:hover {
-      background-color: #4cae4c;
-    }
     .flash {
       color: green;
       list-style: none;
@@ -69,28 +57,60 @@
     form {
       margin-bottom: 20px;
     }
-    select, input[type="text"] {
-      padding: 5px;
-      font-size: 14px;
-      margin-right: 5px;
+    .editable {
+      cursor: text;
+      background-color: #fcfcfc;
+    }
+    .editable:focus {
+      background-color: #fff;
+      outline: 1px solid #007BFF;
     }
   </style>
   <script>
-    function toggleCustomInput(selectElem, customInputId) {
-      var customInput = document.getElementById(customInputId);
-      if (selectElem.value === "Custom") {
-        customInput.style.display = "inline";
-      } else {
-        customInput.style.display = "none";
-      }
+    // Function to send inline update for a given transaction field
+    function updateField(transactionId, field, newValue) {
+      fetch(`/update_field/${transactionId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // You might want to add a CSRF token here in production
+        },
+        body: JSON.stringify({ field: field, value: newValue })
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.status !== "success") {
+          alert("Update failed: " + data.message);
+        }
+      })
+      .catch(error => {
+        console.error("Error updating field:", error);
+      });
     }
+
+    // Event handler for inline editing fields
+    function inlineUpdateHandler(event) {
+      const td = event.target;
+      const transactionId = td.getAttribute("data-id");
+      const field = td.getAttribute("data-field");
+      const newValue = td.innerText.trim();
+      updateField(transactionId, field, newValue);
+    }
+
+    // Attach blur event listeners on page load to editable cells
+    document.addEventListener("DOMContentLoaded", function() {
+      const editables = document.querySelectorAll(".editable");
+      editables.forEach(function(cell) {
+        cell.addEventListener("blur", inlineUpdateHandler);
+      });
+    });
   </script>
 </head>
 <body>
-  <h2>Welcome to the Web App MVP</h2>
+  <h2>Welcome to the Spending Tracker App</h2>
   <a href="{{ url_for('logout') }}">Logout</a>
 
-  <h3>Submit Text</h3>
+  <h3>Submit Transaction Text</h3>
   {% with messages = get_flashed_messages() %}
     {% if messages %}
       <ul class="flash">
@@ -101,45 +121,29 @@
     {% endif %}
   {% endwith %}
   <form method="POST">
-    <textarea name="text" rows="5" cols="50" placeholder="Paste your text here" required></textarea><br>
-    <button type="submit">Submit Text</button>
+    <textarea name="text" rows="5" cols="50" placeholder="Paste your transaction text here" required></textarea><br>
+    <button type="submit">Submit</button>
   </form>
 
   <h3>Transactions</h3>
   <table>
     <thead>
       <tr>
-        <th>ID</th>
         <th>Amount</th>
         <th>Merchant</th>
         <th>Category</th>
         <th>Transaction Date</th>
-        <th>Date Added</th>
         <th>Delete</th>
       </tr>
     </thead>
     <tbody>
       {% for tx in transactions %}
       <tr>
-        <td>{{ tx['id'] }}</td>
-        <td>${{ tx['amount'] | round(2) }}</td>
+        <!-- Inline editable fields with data attributes for transaction id and field name -->
+        <td class="editable" contenteditable="true" data-id="{{ tx['id'] }}" data-field="amount">${{ tx['amount'] | round(2) }}</td>
         <td>{{ tx['merchant'] }}</td>
-        <td>
-          <form method="POST" action="{{ url_for('update_category', transaction_id=tx['id']) }}">
-            <select name="category" onchange="toggleCustomInput(this, 'custom-input-{{ tx['id'] }}')">
-              {% for cat in categories %}
-                <option value="{{ cat }}" {% if tx['category'] == cat %}selected{% endif %}>{{ cat }}</option>
-              {% endfor %}
-              <option value="Custom" {% if tx['category'] not in categories %}selected{% endif %}>Custom</option>
-            </select>
-            <span id="custom-input-{{ tx['id'] }}" style="display: {% if tx['category'] not in categories %}inline{% else %}none{% endif %};">
-              <input type="text" name="custom_category" placeholder="Enter custom category" value="{% if tx['category'] not in categories %}{{ tx['category'] }}{% endif %}">
-            </span>
-            <button type="submit" class="update-btn">Update</button>
-          </form>
-        </td>
+        <td class="editable" contenteditable="true" data-id="{{ tx['id'] }}" data-field="category">{{ tx['category'] }}</td>
         <td>{{ tx['transactionDate'] }}</td>
-        <td>{{ tx['datetimeAdded'] }}</td>
         <td>
           <form method="POST" action="{{ url_for('delete_transaction', transaction_id=tx['id']) }}">
             <button type="submit" class="delete-btn">X</button>
@@ -151,8 +155,7 @@
     <tfoot>
       <tr>
         <td colspan="1">Total</td>
-        <td>${{ total | round(2) }}</td>
-        <td colspan="5"></td>
+        <td colspan="4">${{ total | round(2) }}</td>
       </tr>
     </tfoot>
   </table>
